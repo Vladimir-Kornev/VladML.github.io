@@ -1040,7 +1040,7 @@ section.sec { padding: clamp(72px, 9vw, 120px) 0; }
 
       <div class="heatmap">
         <div class="heatmap-head">
-          <span class="t">// commit activity — last 26 weeks</span>
+          <span class="t">// commit activity — 2025</span>
           <span id="hm-count">312 events</span>
         </div>
         <div class="heatmap-grid" id="hm-grid"></div>
@@ -1304,7 +1304,7 @@ tick(); setInterval(tick, 1000);
   const countEl = document.getElementById('hm-count');
   if (!grid) return;
 
-  const COLS = 26, ROWS = 7, CELLS = COLS * ROWS;
+  const COLS = 53, ROWS = 7, CELLS = COLS * ROWS;
   const LEVEL_BG = [
     'color-mix(in oklab, var(--accent) 10%, transparent)',
     'color-mix(in oklab, var(--accent) 30%, transparent)',
@@ -1322,7 +1322,7 @@ tick(); setInterval(tick, 1000);
       const cell = document.createElement('span');
       cell.className = 'hm-cell';
       cell.title = cell.dataset.lvl = lvl;
-      cell.style.background = LEVEL_BG[Math.min(lvl, 4)];
+      cell.style.background = lvl < 0 ? 'transparent' : LEVEL_BG[Math.min(lvl, 4)];
       grid.appendChild(cell);
     });
   }
@@ -1337,32 +1337,30 @@ tick(); setInterval(tick, 1000);
     renderCells(lvls);
   }
 
-  // Fetch last 26 weeks from public GitHub contributions API
-  fetch('https://github-contributions-api.jogruber.de/v4/Vladimir-Kornev?y=last')
+  // Fetch full 2025 contributions from public GitHub contributions API
+  fetch('https://github-contributions-api.jogruber.de/v4/Vladimir-Kornev?y=2025')
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
     .then(data => {
-      // data.contributions = [{date, count, level}, ...] sorted oldest→newest
       const all = data.contributions || [];
-      // align to today's weekday so grid ends on today
-      const today = new Date();
-      const todayDow = today.getDay(); // 0=Sun
-      // total cells needed: COLS*ROWS, last cell = today
-      // build a date→level map
+      // Jan 1 2025 was a Wednesday (dow=3); pad the start so col 0 = Sun Jan-week
       const map = {};
       all.forEach(d => { map[d.date] = d.level; });
-      // walk back CELLS-1 days from today
+      // Build 53×7 grid starting from Sun of the week containing Jan 1 2025
+      const jan1 = new Date('2025-01-01');
+      const startOffset = jan1.getDay(); // days to go back to reach Sunday
+      const start = new Date(jan1);
+      start.setDate(jan1.getDate() - startOffset);
       const levels = [];
-      for (let i = CELLS - 1; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(today.getDate() - i);
+      for (let i = 0; i < CELLS; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
         const key = d.toISOString().slice(0, 10);
-        levels.push(map[key] ?? 0);
+        // grey out days outside 2025
+        levels.push(key >= '2025-01-01' && key <= '2025-12-31' ? (map[key] ?? 0) : -1);
       }
       renderCells(levels);
-      // update count label
-      const total = levels.reduce((s, l) => s + (l > 0 ? 1 : 0), 0);
-      const sum = all.slice(-CELLS).reduce((s, d) => s + (d.count || 0), 0);
-      if (countEl) countEl.textContent = sum + ' contributions · last 26 wks';
+      const sum = all.reduce((s, d) => s + (d.count || 0), 0);
+      if (countEl) countEl.textContent = sum + ' contributions · 2025';
     })
     .catch(() => fallback());
 })();
