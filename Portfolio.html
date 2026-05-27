@@ -1298,31 +1298,73 @@ function tick() {
 }
 tick(); setInterval(tick, 1000);
 
-// ===== heatmap (deterministic pseudo-random) =====
+// ===== heatmap (live GitHub contributions) =====
 (function() {
   const grid = document.getElementById('hm-grid');
+  const countEl = document.getElementById('hm-count');
   if (!grid) return;
-  // 7 rows × 26 weeks = 182 cells
-  let seed = 4242;
-  function rnd() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }
-  // we'll render 26 weekly columns × 7 days but flatten as one grid of 7×26 — using 26 cols actually,
-  // build as 26 cells each containing 7 mini? Simpler: 26 cols × 7 rows via inline rows
-  grid.style.gridTemplateColumns = 'repeat(26, 1fr)';
-  grid.style.gridTemplateRows = 'repeat(7, 1fr)';
-  grid.style.gridAutoFlow = 'column';
-  for (let i = 0; i < 26 * 7; i++) {
-    const cell = document.createElement('span');
-    cell.className = 'hm-cell';
-    const v = rnd();
-    let bg;
-    if (v < 0.45) bg = 'color-mix(in oklab, var(--accent) 10%, transparent)';
-    else if (v < 0.7) bg = 'color-mix(in oklab, var(--accent) 30%, transparent)';
-    else if (v < 0.86) bg = 'color-mix(in oklab, var(--accent) 55%, transparent)';
-    else if (v < 0.96) bg = 'color-mix(in oklab, var(--accent) 80%, transparent)';
-    else bg = 'var(--accent)';
-    cell.style.background = bg;
-    grid.appendChild(cell);
+
+  const COLS = 26, ROWS = 7, CELLS = COLS * ROWS;
+  const LEVEL_BG = [
+    'color-mix(in oklab, var(--accent) 10%, transparent)',
+    'color-mix(in oklab, var(--accent) 30%, transparent)',
+    'color-mix(in oklab, var(--accent) 55%, transparent)',
+    'color-mix(in oklab, var(--accent) 80%, transparent)',
+    'var(--accent)'
+  ];
+
+  function renderCells(levels) {
+    grid.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+    grid.style.gridTemplateRows    = `repeat(${ROWS}, 1fr)`;
+    grid.style.gridAutoFlow        = 'column';
+    grid.innerHTML = '';
+    levels.forEach((lvl, i) => {
+      const cell = document.createElement('span');
+      cell.className = 'hm-cell';
+      cell.title = cell.dataset.lvl = lvl;
+      cell.style.background = LEVEL_BG[Math.min(lvl, 4)];
+      grid.appendChild(cell);
+    });
   }
+
+  function fallback() {
+    let seed = 4242;
+    function rnd() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }
+    const lvls = Array.from({length: CELLS}, () => {
+      const v = rnd();
+      return v < 0.45 ? 0 : v < 0.7 ? 1 : v < 0.86 ? 2 : v < 0.96 ? 3 : 4;
+    });
+    renderCells(lvls);
+  }
+
+  // Fetch last 26 weeks from public GitHub contributions API
+  fetch('https://github-contributions-api.jogruber.de/v4/Vladimir-Kornev?y=last')
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(data => {
+      // data.contributions = [{date, count, level}, ...] sorted oldest→newest
+      const all = data.contributions || [];
+      // align to today's weekday so grid ends on today
+      const today = new Date();
+      const todayDow = today.getDay(); // 0=Sun
+      // total cells needed: COLS*ROWS, last cell = today
+      // build a date→level map
+      const map = {};
+      all.forEach(d => { map[d.date] = d.level; });
+      // walk back CELLS-1 days from today
+      const levels = [];
+      for (let i = CELLS - 1; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const key = d.toISOString().slice(0, 10);
+        levels.push(map[key] ?? 0);
+      }
+      renderCells(levels);
+      // update count label
+      const total = levels.reduce((s, l) => s + (l > 0 ? 1 : 0), 0);
+      const sum = all.slice(-CELLS).reduce((s, d) => s + (d.count || 0), 0);
+      if (countEl) countEl.textContent = sum + ' contributions · last 26 wks';
+    })
+    .catch(() => fallback());
 })();
 
 // ===== nav active state =====
